@@ -1,9 +1,11 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../models/staff_order.dart';
+import '../models/table_session.dart';
 import 'auth_store.dart';
 
 class ApiException implements Exception {
@@ -26,6 +28,11 @@ class ApiClient {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email.trim(), 'password': password}),
     );
+    // Diagnostic: _decode collapses every failure into one generic message, so
+    // log the raw response before it is swallowed.
+    debugPrint('[login] POST $apiBaseUrl/api/staff/login -> ${response.statusCode}');
+    debugPrint('[login] content-type: ${response.headers['content-type']}');
+    debugPrint('[login] body: ${response.body}');
     final body = _decode(response, 'Could not sign in.');
     final restaurant = body['restaurant'] as Map<String, dynamic>;
     return StaffSession(
@@ -44,6 +51,17 @@ class ApiClient {
     );
     final body = _decode(response, 'Could not load orders.');
     return (body['orders'] as List<dynamic>).map((raw) => StaffOrder.fromJson(raw as Map<String, dynamic>)).toList();
+  }
+
+  /// Every open visit for this restaurant, including tables that have not
+  /// ordered yet - those produce no orders, so [fetchOrders] cannot see them.
+  Future<List<TableSession>> fetchSessions() async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/api/sessions?restaurant=${Uri.encodeQueryComponent(session.restaurantSlug)}'),
+      headers: _headers,
+    );
+    final body = _decode(response, 'Could not load tables.');
+    return (body['sessions'] as List<dynamic>).map((raw) => TableSession.fromJson(raw as Map<String, dynamic>)).toList();
   }
 
   Future<void> updateOrderStatus(String orderId, String status) async {

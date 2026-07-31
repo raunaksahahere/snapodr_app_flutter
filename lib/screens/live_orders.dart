@@ -34,6 +34,11 @@ abstract class LiveOrdersState<W extends LiveOrdersScreen> extends State<W> {
   /// Skipped for the very first poll, when everything would look "new".
   void onPolled(List<StaffOrder> previous, List<StaffOrder> next);
 
+  /// Extra data a screen shows alongside orders, fetched on the same tick so
+  /// one poll refreshes the whole screen. Assign to fields here - the caller
+  /// rebuilds afterwards. Default is nothing, which is what the kitchen wants.
+  Future<void> fetchExtras() async {}
+
   List<StaffOrder> get orders => oldestFirst(allOrders, visibleStatuses);
 
   @override
@@ -55,6 +60,7 @@ abstract class LiveOrdersState<W extends LiveOrdersScreen> extends State<W> {
     _polling = true;
     try {
       final next = await client.fetchOrders();
+      await fetchExtras();
       final previous = allOrders;
       final first = loading;
       if (!mounted) return;

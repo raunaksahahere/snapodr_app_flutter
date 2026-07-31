@@ -57,7 +57,7 @@ class StaffOrder {
   final String? sessionPaymentMethod;
 
   /// The table is waiting to hand over cash at the counter rather than paying
-  /// through Cashfree.
+  /// online through Razorpay.
   bool get awaitingCash => sessionStatus == 'bill_requested' && sessionPaymentMethod == 'cash';
 
   String get shortId => id.length <= 6 ? id : id.substring(id.length - 6);

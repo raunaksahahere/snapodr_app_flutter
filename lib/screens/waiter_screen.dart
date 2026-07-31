@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/staff_order.dart';
+import '../models/table_session.dart';
 import '../services/notifications.dart';
 import 'live_orders.dart';
 
@@ -14,6 +15,17 @@ class WaiterScreen extends LiveOrdersScreen {
 class _WaiterScreenState extends LiveOrdersState<WaiterScreen> {
   @override
   Set<String> get visibleStatuses => waiterStatuses;
+
+  /// Every open visit, including tables that have not ordered yet.
+  List<TableSession> sessions = const [];
+  List<TableSession> _sessionsBefore = const [];
+
+  @override
+  Future<void> fetchExtras() async {
+    final next = await client.fetchSessions();
+    _sessionsBefore = sessions;
+    sessions = next;
+  }
 
   @override
   void onPolled(List<StaffOrder> previous, List<StaffOrder> next) {
@@ -30,17 +42,18 @@ class _WaiterScreenState extends LiveOrdersState<WaiterScreen> {
       }
     }
 
-    final cashBefore = _cashTables(previous);
-    _cashTables(next).forEach((sessionId, table) {
-      if (cashBefore.containsKey(sessionId)) return;
-      Notifications.cash('Collect cash · $table', 'This table asked to settle their bill in cash.', key: 'cash-$sessionId');
-    });
+    // Cash alerts come off the session, not its orders: a table can ask to
+    // settle up without ever having an order the waiter screen lists.
+    final cashBefore = {for (final session in _sessionsBefore.where((s) => s.awaitingCash)) session.id};
+    for (final session in sessions.where((session) => session.awaitingCash)) {
+      if (cashBefore.contains(session.id)) continue;
+      Notifications.cash(
+        'Collect cash · ${session.tableLabel}',
+        'This table asked to settle their bill in cash.',
+        key: 'cash-${session.id}',
+      );
+    }
   }
-
-  /// sessionId -> table label, for every table waiting to pay at the counter.
-  Map<String, String> _cashTables(List<StaffOrder> orders) => {
-    for (final order in orders.where((order) => order.awaitingCash)) order.sessionId: order.tableLabel,
-  };
 
   Future<void> _confirmDelete(String sessionId, String tableLabel) async {
     final confirmed = await showDialog<bool>(
@@ -61,58 +74,81 @@ class _WaiterScreenState extends LiveOrdersState<WaiterScreen> {
     if (confirmed ?? false) await runAction(() => client.deleteSession(sessionId));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final cashTables = _cashTables(allOrders);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Waiter'),
-        actions: [IconButton(onPressed: poll, icon: const Icon(Icons.refresh))],
-      ),
-      body: buildBody(
-        context,
-        (order) => OrderCard(
-          order: order,
-          trailing: IconButton(
-            tooltip: 'Delete session',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: order.sessionId.isEmpty ? null : () => _confirmDelete(order.sessionId, order.tableLabel),
+  /// Table-level view of the floor. Every open session gets a row and its own
+  /// delete action, so a seated table with nothing ordered can still be cleared.
+  Widget? _tablesCard(BuildContext context) {
+    if (sessions.isEmpty) return null;
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+            child: Text(
+              'Tables · ${sessions.length} open',
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
           ),
-          actions: [
-            if (order.status == 'ready')
-              FilledButton(
-                onPressed: () => runAction(() => client.updateOrderStatus(order.id, 'served')),
-                child: const Text('Mark Served'),
-              )
-            else if (order.status == 'served')
-              const Text('Served')
-            else
-              const Text('With the kitchen'),
-          ],
-        ),
-        header: cashTables.isEmpty
-            ? null
-            : Card(
-                color: Theme.of(context).colorScheme.tertiaryContainer,
-                margin: const EdgeInsets.only(bottom: 10),
-                child: Column(
-                  children: cashTables.entries
-                      .map(
-                        (entry) => ListTile(
-                          leading: const Icon(Icons.payments_outlined),
-                          title: Text('Collect cash · ${entry.value}'),
-                          subtitle: const Text('Bill requested, paying at the counter.'),
-                          trailing: IconButton(
-                            tooltip: 'Delete session',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _confirmDelete(entry.key, entry.value),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
+          ...sessions.map((session) {
+            final cash = session.awaitingCash;
+            return ListTile(
+              leading: Icon(
+                cash ? Icons.payments_outlined : Icons.table_restaurant_outlined,
+                color: cash ? theme.colorScheme.tertiary : null,
               ),
+              title: Text(
+                session.tableLabel,
+                style: TextStyle(fontWeight: cash ? FontWeight.bold : FontWeight.normal),
+              ),
+              subtitle: Text(
+                cash
+                    ? 'Collect cash · ${session.orderSummary}'
+                    : session.billRequested
+                    ? 'Bill requested · ${session.orderSummary}'
+                    : session.orderSummary,
+              ),
+              trailing: IconButton(
+                tooltip: 'Delete session',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => _confirmDelete(session.id, session.tableLabel),
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Waiter'),
+      actions: [IconButton(onPressed: poll, icon: const Icon(Icons.refresh))],
+    ),
+    body: buildBody(
+      context,
+      (order) => OrderCard(
+        order: order,
+        trailing: IconButton(
+          tooltip: 'Delete session',
+          icon: const Icon(Icons.delete_outline),
+          onPressed: order.sessionId.isEmpty ? null : () => _confirmDelete(order.sessionId, order.tableLabel),
+        ),
+        actions: [
+          if (order.status == 'ready')
+            FilledButton(
+              onPressed: () => runAction(() => client.updateOrderStatus(order.id, 'served')),
+              child: const Text('Mark Served'),
+            )
+          else if (order.status == 'served')
+            const Text('Served')
+          else
+            const Text('With the kitchen'),
+        ],
+      ),
+      header: _tablesCard(context),
+    ),
+  );
 }

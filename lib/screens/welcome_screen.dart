@@ -27,25 +27,27 @@ class WelcomeScreen extends StatelessWidget {
         padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text('Hello,', style: Theme.of(context).textTheme.headlineSmall),
+            Text(
+              'Hello,',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
             const SizedBox(height: 6),
             Text(
               session.restaurantName,
+              textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 40),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FloatingActionButton.large(
-                heroTag: 'welcome-continue',
-                tooltip: 'Continue',
-                onPressed: () => Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => ModeScreen(session: session))),
-                child: const Icon(Icons.arrow_forward, size: 36),
-              ),
+            FloatingActionButton.large(
+              heroTag: 'welcome-continue',
+              tooltip: 'Continue',
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => ModeScreen(session: session))),
+              child: const Icon(Icons.arrow_forward, size: 36),
             ),
           ],
         ),
