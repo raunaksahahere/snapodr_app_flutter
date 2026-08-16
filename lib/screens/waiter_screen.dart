@@ -77,6 +77,57 @@ class _WaiterScreenState extends LiveOrdersState<WaiterScreen> {
     if (confirmed ?? false) await runAction(() => client.deleteSession(sessionId));
   }
 
+  /// Taking money off a table's bill - a goodwill gesture, a manager's call.
+  /// Pre-filled with whatever is already applied so the waiter adjusts rather
+  /// than guesses, and an empty field clears it.
+  Future<void> _applyDiscount(TableSession session) async {
+    final controller = TextEditingController(
+      text: session.hasDiscount ? session.discountAmount.toStringAsFixed(2) : '',
+    );
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Discount · ${session.tableLabel}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Comes off this table\'s bill total.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                prefixText: '₹ ',
+                hintText: '0.00',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Cancel')),
+          if (session.hasDiscount)
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop('0'), child: const Text('Remove')),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (entered == null || !mounted) return;
+
+    final amount = entered.isEmpty ? 0.0 : double.tryParse(entered);
+    if (amount == null || amount < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid amount.')));
+      return;
+    }
+    await runAction(() => client.setSessionDiscount(session.id, amount));
+  }
+
   /// Ordering on a table's behalf, for a walk-in who never scanned the QR code.
   /// The order lands on the table's visit and is a normal order from there on.
   Future<void> _newOrder(String tableLabel) async {
@@ -160,15 +211,27 @@ class _WaiterScreenState extends LiveOrdersState<WaiterScreen> {
                 style: TextStyle(fontWeight: cash ? FontWeight.bold : FontWeight.normal),
               ),
               subtitle: Text(
-                cash
-                    ? 'Collect cash · ${session.orderSummary}'
-                    : session.billRequested
-                    ? 'Bill requested · ${session.orderSummary}'
-                    : session.orderSummary,
+                [
+                  if (cash)
+                    'Collect cash · ${session.orderSummary}'
+                  else if (session.billRequested)
+                    'Bill requested · ${session.orderSummary}'
+                  else
+                    session.orderSummary,
+                  if (session.hasDiscount) '− ₹${session.discountAmount.toStringAsFixed(2)} discount',
+                ].join(' · '),
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  IconButton(
+                    tooltip: session.hasDiscount ? 'Edit discount' : 'Add discount',
+                    icon: Icon(
+                      Icons.percent,
+                      color: session.hasDiscount ? theme.colorScheme.primary : null,
+                    ),
+                    onPressed: () => _applyDiscount(session),
+                  ),
                   IconButton(
                     tooltip: 'New order',
                     icon: const Icon(Icons.add_shopping_cart_outlined),

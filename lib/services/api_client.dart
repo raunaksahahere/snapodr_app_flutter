@@ -129,6 +129,17 @@ class ApiClient {
     _decode(response, 'Could not update the order.');
   }
 
+  /// Takes money off a table's bill. Applies to the whole visit, not one order,
+  /// because the visit is what the customer settles. Pass 0 to clear it.
+  Future<void> setSessionDiscount(String sessionId, double amount) async {
+    final response = await http.patch(
+      Uri.parse('$apiBaseUrl/api/sessions/${Uri.encodeComponent(sessionId)}'),
+      headers: _headers,
+      body: jsonEncode({'discountAmount': amount}),
+    );
+    _decode(response, 'Could not apply the discount.');
+  }
+
   /// Staff override: `force=true` ends the visit even when the kitchen has
   /// already accepted orders, which the customer-facing cancel flow refuses.
   Future<void> deleteSession(String sessionId) async {
