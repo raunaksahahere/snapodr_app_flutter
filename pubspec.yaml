@@ -1,5 +1,5 @@
 name: snapodr_app_flutter
-description: "A new Flutter project."
+description: "SnapOdr — snap a photo of an order and get it processed."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -48,6 +48,21 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# App launcher icons. Regenerate with:
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: "ic_launcher"
+  min_sdk_android: 21
+  # Android crops adaptive icons to a circle and masks off the outer ~25%, which
+  # would clip the source art's rounded tile. The foreground is therefore the
+  # artwork alone, padded into the safe zone, over the tile's own black.
+  adaptive_icon_background: "#151515"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  ios: true
+  remove_alpha_ios: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

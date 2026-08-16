@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../models/menu.dart';
 import '../models/staff_order.dart';
 import '../models/table_session.dart';
 import 'auth_store.dart';
@@ -62,6 +63,61 @@ class ApiClient {
     );
     final body = _decode(response, 'Could not load tables.');
     return (body['sessions'] as List<dynamic>).map((raw) => TableSession.fromJson(raw as Map<String, dynamic>)).toList();
+  }
+
+  /// Every table on the floor plan, seated or not. [fetchSessions] only knows
+  /// about tables someone has already opened a visit at, so it cannot offer the
+  /// waiter an empty table to start a walk-in's order on.
+  Future<List<RestaurantTable>> fetchTables() async {
+    final response = await http.get(Uri.parse('$apiBaseUrl/api/tables'), headers: _headers);
+    final body = _decode(response, 'Could not load tables.');
+    return (body['tables'] as List<dynamic>).map((raw) => RestaurantTable.fromJson(raw as Map<String, dynamic>)).toList();
+  }
+
+  /// The same menu the QR site serves customers - available items only.
+  Future<List<MenuCategory>> fetchMenu() async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/api/menu?restaurant=${Uri.encodeQueryComponent(session.restaurantSlug)}'),
+      headers: _headers,
+    );
+    final body = _decode(response, 'Could not load the menu.');
+    return (body['categories'] as List<dynamic>)
+        .map((raw) => MenuCategory.fromJson(raw as Map<String, dynamic>))
+        .where((category) => category.items.isNotEmpty)
+        .toList();
+  }
+
+  /// The visit to attach a staff-placed order to: the table's open one if it has
+  /// it, a fresh one if it does not. The server decides which - see
+  /// `findOrCreateTableSession` - so two waiters racing on one table cannot end
+  /// up with two tabs.
+  Future<String> openTableSession(String tableLabel) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/api/sessions'),
+      headers: _headers,
+      body: jsonEncode({'restaurantSlug': session.restaurantSlug, 'tableLabel': tableLabel}),
+    );
+    final body = _decode(response, 'Could not open a session for this table.');
+    return (body['session'] as Map<String, dynamic>)['id'] as String;
+  }
+
+  /// Places an order on a visit. This is the customer endpoint, unchanged: the
+  /// order it creates is indistinguishable from one placed on a phone, so the
+  /// kitchen queue, the status lifecycle and the daily counts all pick it up
+  /// without knowing staff typed it.
+  Future<void> placeOrder(String sessionId, Map<String, int> quantities, {String note = ''}) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/api/orders'),
+      headers: _headers,
+      body: jsonEncode({
+        'sessionId': sessionId,
+        'note': note.trim(),
+        'items': [
+          for (final entry in quantities.entries) {'menuItemId': entry.key, 'quantity': entry.value},
+        ],
+      }),
+    );
+    _decode(response, 'Could not place the order.');
   }
 
   Future<void> updateOrderStatus(String orderId, String status) async {

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../models/menu.dart';
 import '../models/staff_order.dart';
 import '../models/table_session.dart';
+import '../services/api_client.dart';
 import '../services/notifications.dart';
 import 'live_orders.dart';
+import 'new_order_screen.dart';
 
 class WaiterScreen extends LiveOrdersScreen {
   const WaiterScreen({super.key, required super.session});
@@ -74,6 +77,60 @@ class _WaiterScreenState extends LiveOrdersState<WaiterScreen> {
     if (confirmed ?? false) await runAction(() => client.deleteSession(sessionId));
   }
 
+  /// Ordering on a table's behalf, for a walk-in who never scanned the QR code.
+  /// The order lands on the table's visit and is a normal order from there on.
+  Future<void> _newOrder(String tableLabel) async {
+    final placed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => NewOrderScreen(client: client, tableLabel: tableLabel)),
+    );
+    if (!mounted || !(placed ?? false)) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Order sent for $tableLabel.')));
+    await poll();
+  }
+
+  /// Tables with an open visit are already listed; this reaches the rest of the
+  /// floor plan, which is where a walk-in who never scanned is actually sitting.
+  Future<void> _pickTable() async {
+    List<RestaurantTable> tables;
+    try {
+      tables = await client.fetchTables();
+    } on Object catch (failure) {
+      if (!mounted) return;
+      final message = failure is ApiException ? failure.message : 'Could not load tables.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+    if (!mounted) return;
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: tables.isEmpty
+            ? const Padding(padding: EdgeInsets.all(24), child: Text('No tables have been set up yet.'))
+            : ListView(
+                shrinkWrap: true,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text(
+                      'Order for which table?',
+                      style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  ...tables.map(
+                    (table) => ListTile(
+                      leading: const Icon(Icons.table_restaurant_outlined),
+                      title: Text(table.label),
+                      subtitle: table.hasActiveSession ? const Text('Already ordering') : null,
+                      onTap: () => Navigator.of(sheetContext).pop(table.label),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+    if (chosen != null) await _newOrder(chosen);
+  }
+
   /// Table-level view of the floor. Every open session gets a row and its own
   /// delete action, so a seated table with nothing ordered can still be cleared.
   Widget? _tablesCard(BuildContext context) {
@@ -109,10 +166,20 @@ class _WaiterScreenState extends LiveOrdersState<WaiterScreen> {
                     ? 'Bill requested · ${session.orderSummary}'
                     : session.orderSummary,
               ),
-              trailing: IconButton(
-                tooltip: 'Delete session',
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => _confirmDelete(session.id, session.tableLabel),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'New order',
+                    icon: const Icon(Icons.add_shopping_cart_outlined),
+                    onPressed: () => _newOrder(session.tableLabel),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete session',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _confirmDelete(session.id, session.tableLabel),
+                  ),
+                ],
               ),
             );
           }),
@@ -125,7 +192,10 @@ class _WaiterScreenState extends LiveOrdersState<WaiterScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: const Text('Waiter'),
-      actions: [IconButton(onPressed: poll, icon: const Icon(Icons.refresh))],
+      actions: [
+        IconButton(tooltip: 'New order', onPressed: _pickTable, icon: const Icon(Icons.add_shopping_cart_outlined)),
+        IconButton(tooltip: 'Refresh', onPressed: poll, icon: const Icon(Icons.refresh)),
+      ],
     ),
     body: buildBody(
       context,

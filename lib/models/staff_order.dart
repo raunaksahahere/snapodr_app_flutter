@@ -24,6 +24,7 @@ class StaffOrder {
   const StaffOrder({
     required this.id,
     required this.status,
+    required this.note,
     required this.createdAt,
     required this.items,
     required this.tableLabel,
@@ -38,6 +39,7 @@ class StaffOrder {
     return StaffOrder(
       id: json['id'] as String,
       status: json['status'] as String? ?? 'pending',
+      note: (json['note'] as String?)?.trim(),
       createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
       items: (json['items'] as List<dynamic>? ?? const []).map((raw) => OrderLine.fromJson(raw as Map<String, dynamic>)).toList(),
       tableLabel: table['label'] as String? ?? 'Unknown table',
@@ -49,6 +51,10 @@ class StaffOrder {
 
   final String id;
   final String status;
+
+  /// What the table asked for in words, from the customer's phone or from the
+  /// waiter placing the order. Null when nobody asked for anything.
+  final String? note;
   final DateTime createdAt;
   final List<OrderLine> items;
   final String tableLabel;
@@ -59,6 +65,8 @@ class StaffOrder {
   /// The table is waiting to hand over cash at the counter rather than paying
   /// online through Razorpay.
   bool get awaitingCash => sessionStatus == 'bill_requested' && sessionPaymentMethod == 'cash';
+
+  bool get hasNote => note != null && note!.isNotEmpty;
 
   String get shortId => id.length <= 6 ? id : id.substring(id.length - 6);
 

@@ -2,7 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:usesCleartextTraffic="true"
-        android:label="snapodr_app_flutter"
+        android:label="SnapOdr"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
